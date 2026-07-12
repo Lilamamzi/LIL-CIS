@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0B0E14">
+<title>Lil CIS — دستیار هوشمند Castel</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-brand">
+    <svg width="26" height="26" viewBox="0 0 100 100"><polygon points="20,15 80,15 80,55 50,90 20,55" fill="#E8A33D"/><line x1="35" y1="30" x2="65" y2="60" stroke="#0B0E14" stroke-width="6"/><line x1="65" y1="30" x2="35" y2="60" stroke="#0B0E14" stroke-width="6"/></svg>
+    <span>Lil CIS</span>
+  </div>
+  <span class="topbar-sub">دستیار هوشمند Castel</span>
+</header>
+
+<main id="app"></main>
+
+<nav class="tabbar">
+  <button class="tab-btn active" data-tab="dashboard">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 3l9 8h-3v9h-5v-6H11v6H6v-9H3z"/></svg>
+    <span>داشبورد</span>
+  </button>
+  <button class="tab-btn" data-tab="add">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>
+    <span>ثبت نبرد</span>
+  </button>
+  <button class="tab-btn" data-tab="analysis">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M4 20V10h3v10zm7 0V4h3v16zm7 0v-7h3v7z"/></svg>
+    <span>تحلیل</span>
+  </button>
+  <button class="tab-btn" data-tab="settings">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 4a7.96 7.96 0 00-.18-1.7l2.1-1.63-2-3.46-2.48 1a8 8 0 00-2.94-1.7L15 2h-6l-.44 2.5a8 8 0 00-2.94 1.7l-2.48-1-2 3.46 2.1 1.63a8 8 0 000 3.4l-2.1 1.64 2 3.46 2.48-1a8 8 0 002.94 1.7L9 22h6l.44-2.5a8 8 0 002.94-1.7l2.48 1 2-3.46-2.1-1.64c.12-.55.18-1.12.18-1.7z"/></svg>
+    <span>تنظیمات</span>
+  </button>
+</nav>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="charts.js"></script>
+<script src="ocr.js"></script>
+<script src="ui.js"></script>
+</body>
+</html>
