@@ -243,9 +243,10 @@ function renderAnalysis() {
   appEl.innerHTML = `
     <div class="card">
       <h2>تحلیل Viking Engine</h2>
-      <div class="tabs2">
-        ${[14,15,16].map(l => `<button class="${analysisLevel===l?'active':''}" onclick="setAnalysisLevel(${l})">سطح ${l}</button>`).join("")}
-      </div>
+      <label style="margin-top:0">سطح وایکینگ</label>
+      <select id="level-select" style="margin-bottom:6px">
+        ${Array.from({length:25},(_,i)=>i+1).map(l => `<option value="${l}" ${analysisLevel===l?'selected':''}>سطح ${l}</option>`).join("")}
+      </select>
       ${a.insufficient ? `<p class="muted">داده کافی نیست (${a.n} نبرد). حداقل ۲ نبرد لازمه.</p>` : `
         <div class="confidence-wrap">
           <canvas id="conf-ring" width="70" height="70" style="width:70px;height:70px"></canvas>
@@ -333,6 +334,8 @@ function renderAnalysis() {
       </details>
     </div>
   `;
+
+  document.getElementById("level-select").onchange = (e) => setAnalysisLevel(+e.target.value);
 
   if (!a.insufficient) {
     drawConfidenceRing(document.getElementById("conf-ring"), Math.min(a.n / 20, 1), a.n + "");
