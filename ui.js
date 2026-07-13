@@ -30,22 +30,21 @@ function renderDashboard() {
   const battles = loadBattles();
   const accounts = [...new Set(battles.map(b => b.account))];
   const last = [...battles].sort((a, b) => b.id - a.id)[0];
-  const rec15 = recommend(15, "wounded");
+  const model = fitWoundRateModel();
 
   appEl.innerHTML = `
     <div class="card">
       <h2>خلاصه وضعیت</h2>
       <div class="stat-row"><span class="stat-label">تعداد کل نبردهای ثبت‌شده</span><span class="stat-value">${battles.length}</span></div>
       <div class="stat-row"><span class="stat-label">حساب‌ها</span><span class="stat-value">${accounts.join(" / ") || "—"}</span></div>
-      ${last ? `<div class="stat-row"><span class="stat-label">آخرین نبرد</span><span class="stat-value">${last.account} · Lv${last.level} · ${last.troops} نفر</span></div>` : ""}
+      ${last ? `<div class="stat-row"><span class="stat-label">آخرین نبرد</span><span class="stat-value">${last.account} · Lv${last.level} · ${last.troops.toLocaleString('en-US')} نفر</span></div>` : ""}
     </div>
 
-    ${rec15 && rec15.n ? `
+    ${model ? `
     <div class="card">
-      <h2>پیشنهاد سریع — وایکینگ ۱۵</h2>
-      <p class="muted">بر اساس کمترین مجروح خام، بازه‌ی نیروی <b class="mono">${rec15.label}</b> بهترین نتیجه رو تا الان داشته (میانگین مجروح: <b class="mono">${rec15.meanWounded}</b>، از ${rec15.n} نبرد).</p>
-      ${rec15.lowConfidence ? `<span class="badge badge-low">اطمینان کم — نمونه کمتر از ۳</span>` : `<span class="badge badge-ok">اطمینان قابل قبول</span>`}
-      <div style="margin-top:12px"><button class="btn btn-secondary" onclick="currentTab='analysis';render();document.querySelector('[data-tab=analysis]').click()">مشاهده تحلیل کامل ←</button></div>
+      <h2>موتور پیش‌بینی</h2>
+      <p class="muted">مدل فعلی با دقت <b class="mono">${(model.r2*100).toFixed(0)}٪</b> روی <b class="mono">${model.n}</b> نبرد فعاله.</p>
+      <button class="btn btn-secondary" onclick="document.querySelector('[data-tab=analysis]').click()">محاسبه نیروی لازم برای یه هدف ←</button>
     </div>` : ""}
 
     <div class="card">
@@ -102,6 +101,13 @@ function renderManualForm() {
         <div><label>مجروح</label><input type="number" id="f-wounded" placeholder="مثلا 50" value="${editing ? editing.wounded : ''}"></div>
       </div>
 
+      <label>ترتیب نیروهای دشمن (اختیاری، قبل از حمله ببینید)</label>
+      <input type="text" id="f-enemy-order" placeholder="مثلا: خرس, گرگ, شمشیرزن, سوارکار, نیزه بلند" value="${editing && editing.enemyOrder ? editing.enemyOrder.join(', ') : ''}">
+      <p class="muted" style="margin:4px 2px 0">با ویرگول جدا کنید، از پرتعداد به کم‌تعداد.</p>
+
+      <label>تعداد کل نیروی دشمن (بعد از حمله)</label>
+      <input type="number" id="f-enemy-total" placeholder="مثلا 5170" value="${editing && editing.enemyTroopsTotal ? editing.enemyTroopsTotal : ''}">
+
       <label>یادداشت (اختیاری)</label>
       <input type="text" id="f-note" placeholder="مثلا probe با Zulu" value="${editing ? editing.note || '' : ''}">
 
@@ -140,6 +146,8 @@ function renderManualForm() {
 function cancelEdit() { editingBattleId = null; renderAdd(); }
 
 function doSaveBattle(editing, force = false) {
+  const enemyOrderRaw = document.getElementById("f-enemy-order").value.trim();
+  const enemyOrder = enemyOrderRaw ? enemyOrderRaw.split(",").map(s => s.trim()).filter(Boolean) : null;
   const b = {
     account: document.getElementById("f-account").value.trim() || "Lilmamazi",
     date: document.getElementById("f-date").value.trim(),
@@ -149,12 +157,21 @@ function doSaveBattle(editing, force = false) {
     troopType: document.getElementById("f-type").value,
     deaths: +document.getElementById("f-deaths").value || 0,
     wounded: +document.getElementById("f-wounded").value || 0,
+    enemyOrder: enemyOrder,
+    enemyTroopsTotal: document.getElementById("f-enemy-total").value ? +document.getElementById("f-enemy-total").value : null,
     note: document.getElementById("f-note").value.trim(),
   };
   const msgEl = document.getElementById("save-msg");
   if (!b.troops || !b.wounded) {
     msgEl.innerHTML = `<div class="banner banner-error">نیروی اعزامی و تعداد مجروح باید پر بشه.</div>`;
     return;
+  }
+  let unmatchedWarning = "";
+  if (enemyOrder) {
+    const unmatched = enemyOrder.filter(n => !guessCategory(n));
+    if (unmatched.length) {
+      unmatchedWarning = `<div class="banner banner-warn">این اسم‌ها شناخته نشدن و نادیده گرفته می‌شن: ${unmatched.join('، ')}. از کلمات کلیدی مثل «شمشیر، کماند، سوار، نیزه، خرس/گرگ/وحش، کولی، غول» استفاده کنید.</div>`;
+    }
   }
   if (!force) {
     const dup = findDuplicate(b, editing ? editing.id : null);
@@ -169,9 +186,9 @@ function doSaveBattle(editing, force = false) {
   }
   if (editing) updateBattle(editing.id, b);
   else addBattle(b);
-  msgEl.innerHTML = `<div class="banner banner-success">${editing ? "به‌روزرسانی شد" : "ذخیره شد"} ✓</div>`;
+  msgEl.innerHTML = unmatchedWarning + `<div class="banner banner-success">${editing ? "به‌روزرسانی شد" : "ذخیره شد"} ✓</div>`;
   editingBattleId = null;
-  setTimeout(() => { document.querySelector('[data-tab=dashboard]').click(); }, 900);
+  if (!unmatchedWarning) setTimeout(() => { document.querySelector('[data-tab=dashboard]').click(); }, 900);
 }
 
 function renderVisionTab() {
@@ -293,28 +310,26 @@ function renderAnalysis() {
       `}
     </div>
 
-    ${!a.insufficient ? `
-    <div class="card">
-      <h2>پیشنهاد هوشمند (سطح ${analysisLevel})</h2>
-      ${renderRecCard("کمترین مجروح خام", recommend(analysisLevel,"wounded"))}
-      ${renderRecCard("کمترین نرخ مجروحیت", recommend(analysisLevel,"rate"))}
-    </div>
-    ` : ""}
-
     ${renderPredictorCard()}
 
     ${!a.insufficient ? `
     <div class="card">
       <h2>تخمین ترکیب پنهان سپاه دشمن</h2>
-      <p class="muted">اطمینان: <b>${comp.confidence}</b> (بر اساس ${comp.n || 0} نبرد). این فقط یه تخمین احتمالاتیه، نه واقعیت قطعی.</p>
-      ${comp.ranking.length ? `
+      <p class="muted">اطمینان: <b>${comp.confidence}</b> (بر اساس ${comp.n || 0} نبردی که ترکیب دشمنش رو قبل از حمله ثبت کردید).</p>
+      ${comp.confirmedCategories && comp.confirmedCategories.length ? `
+        <p class="muted">رده‌های تأیید‌شده در این سطح: <b>${comp.confirmedCategories.join('، ')}</b></p>
         <table>
-          <tr><th>رده احتمالی</th><th>واکنش Cataphract</th><th>امتیاز</th></tr>
-          ${comp.ranking.slice(0,4).map(r => `
-            <tr><td>${r.categoryFa}</td><td style="color:${EFFECT_FA[r.effect].color}">${EFFECT_FA[r.effect].label}</td><td class="mono">${r.score}</td></tr>
+          <tr><th>رده</th><th>واکنش Cataphract</th><th>سیگنال</th></tr>
+          ${comp.ranking.map(r => `
+            <tr>
+              <td>${r.categoryFa}</td>
+              <td style="color:${(EFFECT_FA[r.effect]||{}).color || '#8B93A3'}">${(EFFECT_FA[r.effect]||{}).label || r.effect}</td>
+              <td class="mono">${r.signal > 0 ? '+' : ''}${r.signal}</td>
+            </tr>
           `).join("")}
         </table>
-      ` : `<p class="muted">داده کافی نیست.</p>`}
+        <p class="muted" style="margin-top:8px">سیگنال مثبت یعنی این رده بیشتر تو نبردهای پرمجروح‌تر دیده شده.</p>
+      ` : `<p class="muted">هنوز نبردی با ترکیب دشمن ثبت‌شده نداریم. قبل از حمله بعدی، تو فرم ثبت نبرد، ترتیب نیروهای دیده‌شده رو وارد کنید (حداقل ۳ نبرد لازمه).</p>`}
     </div>
 
     <div class="card">
@@ -399,18 +414,21 @@ function attachPredictorEvents() {
       resEl.innerHTML = `<div class="banner banner-error">قدرت هدف و نرخ مجروحیت رو پر کنید.</div>`;
       return;
     }
-    const troops = requiredTroopsForRate(power, rate);
-    if (troops === null || troops <= 0) {
+    const result = requiredTroopsForRate(power, rate);
+    if (!result || result.point <= 0) {
       resEl.innerHTML = `<div class="banner banner-error">با این نرخ، مدل جواب معقولی نداره — نرخ بالاتری امتحان کنید.</div>`;
       return;
     }
-    resEl.innerHTML = `<div class="banner banner-success">برای این هدف، حدود <b class="mono">${troops.toLocaleString('en-US')}</b> نفر Cataphract نیاز دارید تا نرخ مجروحیت حدود ${rate}٪ بمونه.</div>`;
+    const lo = result.optimistic ? Math.min(result.optimistic, result.conservative || result.point) : result.point;
+    const hi = result.conservative || result.point;
+    resEl.innerHTML = `
+      <div class="banner banner-success">
+        بازه‌ی پیشنهادی: بین <b class="mono">${lo.toLocaleString('en-US')}</b> تا <b class="mono">${hi.toLocaleString('en-US')}</b> نفر Cataphract
+        (برای اطمینان بیشتر، عدد بالاتر بازه رو بفرستید)
+      </div>
+      <p class="muted" style="margin-top:6px">این بازه از خطای معمول مدل (RMSE=${result.rmse.toFixed(2)}٪) به‌دست اومده، نه یه حدس. با داده بیشتر، این بازه تنگ‌تر می‌شه.</p>
+    `;
   };
-}
-
-function renderRecCard(title, rec) {
-  if (!rec) return `<p class="muted">${title}: داده کافی نیست.</p>`;
-  return `<div class="stat-row"><span class="stat-label">${title}</span><span class="stat-value">${rec.label} نفر ${rec.lowConfidence ? '<span class="badge badge-low">کم</span>' : ''}</span></div>`;
 }
 
 function setAnalysisLevel(l) { analysisLevel = l; renderAnalysis(); }

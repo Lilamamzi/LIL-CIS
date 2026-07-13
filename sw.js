@@ -1,6 +1,6 @@
 // نکته: هر بار که فایل‌ها رو آپدیت کردید، این ورژن رو عوض کنید
 // تا کاربرهای نصب‌شده نسخه قدیمی cache شده رو نبینن.
-const CACHE_VERSION = "lilcis-v6";
+const CACHE_VERSION = "lilcis-v8";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,8 +11,8 @@ const APP_SHELL = [
   "./charts.js",
   "./ocr.js",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./icon-192.png",
+  "./icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {

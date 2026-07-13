@@ -81,7 +81,23 @@ const EFFECT_FA = {
   vulnerable: {label:"آسیب‌پذیر خیلی زیاد", color:"#C24444"},
 };
 
-// غنیمت شناخته‌شده (فقط سطح ۱۵ تأیید شده)
+// تشخیص رده‌ی نیرو از رو اسمی که کاربر به فارسی می‌ده (کلیدواژه‌ای، چون
+// اسم دقیق مدل سرباز وایکینگ‌ها با ویکی بازیکن‌ها یکی نیست)
+const CATEGORY_KEYWORDS = [
+  { keywords: ["شمشیر"], category: "Swordsman" },
+  { keywords: ["کماند", "تیرانداز", "کمان"], category: "Archer" },
+  { keywords: ["سوار"], category: "Cavalry" },
+  { keywords: ["نیزه"], category: "Spearman" },
+  { keywords: ["خرس", "گرگ", "وحش", "ببر", "شیر", "فیل"], category: "Beast" },
+  { keywords: ["کولی"], category: "Gypsy" },
+  { keywords: ["غول"], category: "Giant" },
+];
+
+function guessCategory(name) {
+  const found = CATEGORY_KEYWORDS.find(c => c.keywords.some(k => name.includes(k)));
+  return found ? found.category : null; // null یعنی نتونستیم تشخیص بدیم
+}
+
 const LOOT_TABLE = {
   15: {direct: 12560, item: 10000},
   14: null,

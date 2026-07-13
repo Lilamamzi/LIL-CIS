@@ -24,6 +24,9 @@ function finalizeBattle(b) {
   const loot = LOOT_TABLE[b.level] || null;
   b.lootDirect = loot ? loot.direct : null;
   b.lootItem = loot ? loot.item : null;
+  if (b.enemyOrder && b.enemyOrder.length) {
+    b.enemyCategories = b.enemyOrder.map(guessCategory).filter(Boolean);
+  }
   return b;
 }
 
@@ -100,7 +103,8 @@ function linreg(xs, ys) {
   const ssRes = ys.reduce((s, y, i) => s + (y - predicted[i]) ** 2, 0);
   const ssTot = ys.reduce((s, y) => s + (y - my) ** 2, 0);
   const r2 = ssTot ? 1 - ssRes / ssTot : 0;
-  return { a, b, r2, n };
+  const rmse = Math.sqrt(ssRes / n); // خطای معمول پیش‌بینی (بر حسب درصد نرخ مجروحیت)
+  return { a, b, r2, n, rmse };
 }
 
 function fitWoundRateModel() {
@@ -120,11 +124,19 @@ function predictWoundRate(targetPower, troops) {
 }
 
 // معکوس مدل: برای یک هدف با قدرت مشخص، چند نیرو لازمه تا نرخ مجروحیت زیر مقدار دلخواه بمونه؟
+// به‌جای یه عدد تنها، یه بازه برمی‌گردونه چون مدل ۱۰۰٪ دقیق نیست (R²<1)
 function requiredTroopsForRate(targetPower, desiredRate) {
   const model = fitWoundRateModel();
   if (!model) return null;
-  if (desiredRate <= model.a) return null; // این نرخ با این مدل خطی قابل دستیابی نیست
-  return Math.round((model.b * targetPower) / (desiredRate - model.a));
+  const troopsFor = (rate) => {
+    if (rate <= model.a) return null;
+    return Math.round((model.b * targetPower) / (rate - model.a));
+  };
+  const point = troopsFor(desiredRate);
+  const conservative = troopsFor(Math.max(0.01, desiredRate - model.rmse)); // مطمئن‌تر، نیروی بیشتر
+  const optimistic = troopsFor(desiredRate + model.rmse); // خوش‌بینانه، نیروی کمتر
+  if (point === null) return null;
+  return { point, conservative, optimistic, rmse: model.rmse, r2: model.r2, n: model.n };
 }
 
 
@@ -180,41 +192,40 @@ function vikingAnalysis(level) {
   };
 }
 
-function recommend(level, goal) {
-  const a = vikingAnalysis(level);
-  if (a.insufficient) return null;
-  const valid = a.bucketStats.filter(b => b.n > 0);
-  if (!valid.length) return null;
-  let sorted;
-  if (goal === "rate") sorted = [...valid].sort((x, y) => x.meanRate - y.meanRate);
-  else sorted = [...valid].sort((x, y) => x.meanWounded - y.meanWounded);
-  return sorted[0];
-}
 
-// ---------- تخمین ترکیب پنهان (Bayesian ساده) ----------
+
+// ---------- تخمین ترکیب پنهان — نسخه ۲ ----------
+// نسخه قبلی بین همه‌ی ۷ رده حدس می‌زد، حتی رده‌هایی که اصلاً تو اون سطح
+// وجود نداشتن. این نسخه فقط رو رده‌هایی کار می‌کنه که خود کاربر برای اون
+// سطح تأیید کرده (از رو مشاهده مستقیم قبل از حمله).
 function compositionEstimate(level) {
-  const a = vikingAnalysis(level);
-  if (a.insufficient || a.n < 3) return { confidence: "کم (داده ناکافی)", ranking: [] };
+  const battles = loadBattles().filter(b => b.level === level && b.troopType === "Cataphract" && b.enemyCategories && b.enemyCategories.length);
+  if (battles.length < 3) {
+    return { confidence: "داده کافی نیست", ranking: [], n: battles.length, confirmedCategories: [] };
+  }
 
-  // فرض: نرخ مجروحیت بالاتر از میانگین => احتمال بیشتر آرچر/جاینت (بد برای کاتافراکت)
-  const avgRate = mean(a.battles.map(b => b.woundRate));
-  const highRateBattles = a.battles.filter(b => b.woundRate > avgRate * 1.15);
-  const lowRateBattles = a.battles.filter(b => b.woundRate < avgRate * 0.85);
+  // مجموعه‌ی رده‌هایی که واقعاً برای این سطح تأیید شده
+  const confirmedSet = [...new Set(battles.flatMap(b => b.enemyCategories))];
 
-  // امتیازدهی ساده بر اساس ماتریس کانتر Cataphract
+  const avgRate = mean(battles.map(b => b.woundRate));
+  const highRateBattles = battles.filter(b => b.woundRate > avgRate * 1.15);
+  const lowRateBattles = battles.filter(b => b.woundRate < avgRate * 0.85);
+
   const cavalryCounters = TROOP_COUNTERS.Cavalry;
-  const ranking = Object.entries(cavalryCounters).map(([cat, effect]) => {
-    let score = 0;
-    if (effect === "vulnerable") score = highRateBattles.length;
-    if (effect === "hindered") score = highRateBattles.length * 0.5;
-    if (effect === "dominant") score = lowRateBattles.length * -0.3;
-    if (effect === "favorable") score = lowRateBattles.length * -0.15;
-    return { category: cat, categoryFa: CATEGORY_FA[cat], effect, score: +score.toFixed(2) };
-  }).sort((x, y) => y.score - x.score);
+  const ranking = confirmedSet.map(cat => {
+    const effect = cavalryCounters[cat] || "نامشخص";
+    // چند بار این رده تو نبردهای پرمجروح‌تر حضور داشته نسبت به کم‌مجروح‌تر
+    const inHigh = highRateBattles.filter(b => b.enemyCategories.includes(cat)).length;
+    const inLow = lowRateBattles.filter(b => b.enemyCategories.includes(cat)).length;
+    const signal = inHigh - inLow;
+    return { category: cat, categoryFa: CATEGORY_FA[cat] || cat, effect, signal };
+  }).sort((a, b) => b.signal - a.signal);
 
-  const confidence = a.n >= 15 ? "متوسط" : "کم";
-  return { confidence, n: a.n, ranking, highRateCount: highRateBattles.length, lowRateCount: lowRateBattles.length };
+  const confidence = battles.length >= 15 ? "متوسط" : "کم";
+  return { confidence, n: battles.length, ranking, confirmedCategories: confirmedSet.map(c => CATEGORY_FA[c] || c) };
 }
+
+
 
 function probeRecommendation() {
   // رتبه‌بندی نیروها بر اساس اختلاف پروفایل کانتر با Cataphract
