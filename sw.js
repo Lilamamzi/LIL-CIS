@@ -1,6 +1,6 @@
 // نکته: هر بار که فایل‌ها رو آپدیت کردید، این ورژن رو عوض کنید
 // تا کاربرهای نصب‌شده نسخه قدیمی cache شده رو نبینن.
-const CACHE_VERSION = "lilcis-v5";
+const CACHE_VERSION = "lilcis-v6";
 const APP_SHELL = [
   "./",
   "./index.html",
