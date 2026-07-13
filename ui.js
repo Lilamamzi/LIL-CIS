@@ -6,6 +6,7 @@ const appEl = document.getElementById("app");
 let currentTab = "dashboard";
 let addSubTab = "manual";
 let ocrAssigned = {}; // field key -> number
+let editingBattleId = null; // اگه پر باشه یعنی داریم ویرایش می‌کنیم، نه ثبت جدید
 
 document.querySelectorAll(".tab-btn").forEach(btn => {
   btn.addEventListener("click", () => {
@@ -71,43 +72,44 @@ function renderAdd() {
 }
 
 function renderManualForm() {
-  const troopOptions = TROOP_TYPES.map(t => `<option value="${t.name}">${t.fa} (${t.category === 'Cavalry' ? 'سواره‌نظام' : CATEGORY_FA[t.category]})</option>`).join("");
+  const editing = editingBattleId ? getBattle(editingBattleId) : null;
+  const troopOptions = TROOP_TYPES.map(t => `<option value="${t.name}">${t.fa} (${CATEGORY_FA[t.category]})</option>`).join("");
   const container = document.getElementById("add-content");
   container.innerHTML = `
     <div class="card">
-      <h2>افزودن نبرد — ورود دستی</h2>
+      <h2>${editing ? "ویرایش نبرد" : "افزودن نبرد — ورود دستی"}</h2>
+      ${editing ? `<p class="muted">در حال ویرایش نبرد #${editing.id}. <button class="btn-secondary" style="width:auto;padding:4px 10px;border-radius:8px;font-size:.75rem" onclick="cancelEdit()">انصراف</button></p>` : ""}
 
       <label>نام حساب</label>
-      <input type="text" id="f-account" placeholder="مثلا Lilmamazi" list="acc-list">
-      <datalist id="acc-list">${[...new Set(loadBattles().map(b=>b.account))].map(a=>`<option value="${a}">`).join("")}</datalist>
+      <input type="text" id="f-account" value="${editing ? editing.account : 'Lilmamazi'}">
 
       <div class="row2">
-        <div><label>تاریخ</label><input type="text" id="f-date" placeholder="MM-DD"></div>
-        <div><label>سطح وایکینگ</label><input type="number" id="f-level" placeholder="15" value="15"></div>
+        <div><label>تاریخ</label><input type="text" id="f-date" placeholder="MM-DD" value="${editing ? editing.date || '' : ''}"></div>
+        <div><label>سطح وایکینگ</label><input type="number" id="f-level" placeholder="15" value="${editing ? editing.level : 15}"></div>
       </div>
 
       <label>قدرت هدف (وایکینگ)</label>
-      <input type="number" id="f-power" placeholder="مثلا 240000">
+      <input type="number" id="f-power" placeholder="مثلا 240000" value="${editing && editing.targetPower ? editing.targetPower : ''}">
 
       <div class="row2">
-        <div><label>نیروی اعزامی</label><input type="number" id="f-troops" placeholder="مثلا 1800"></div>
+        <div><label>نیروی اعزامی</label><input type="number" id="f-troops" placeholder="مثلا 1800" value="${editing ? editing.troops : ''}"></div>
         <div><label>نوع نیرو</label><select id="f-type">${troopOptions}</select></div>
       </div>
       <p class="muted" id="power-estimate" style="margin:6px 2px 0"></p>
 
       <div class="row2">
-        <div><label>تلفات</label><input type="number" id="f-deaths" placeholder="0" value="1"></div>
-        <div><label>مجروح</label><input type="number" id="f-wounded" placeholder="مثلا 50"></div>
+        <div><label>تلفات</label><input type="number" id="f-deaths" placeholder="0" value="${editing ? editing.deaths : 1}"></div>
+        <div><label>مجروح</label><input type="number" id="f-wounded" placeholder="مثلا 50" value="${editing ? editing.wounded : ''}"></div>
       </div>
       <div class="row2">
-        <div><label>مصدوم (اختیاری)</label><input type="number" id="f-injured" placeholder="—"></div>
-        <div><label>بازمانده (اختیاری)</label><input type="number" id="f-survivors" placeholder="—"></div>
+        <div><label>مصدوم (اختیاری)</label><input type="number" id="f-injured" placeholder="—" value="${editing && editing.injured ? editing.injured : ''}"></div>
+        <div><label>بازمانده (اختیاری)</label><input type="number" id="f-survivors" placeholder="—" value="${editing && editing.survivors ? editing.survivors : ''}"></div>
       </div>
 
       <label>یادداشت (اختیاری)</label>
-      <input type="text" id="f-note" placeholder="مثلا probe با Zulu">
+      <input type="text" id="f-note" placeholder="مثلا probe با Zulu" value="${editing ? editing.note || '' : ''}">
 
-      <div style="margin-top:16px"><button class="btn" id="save-battle">ذخیره نبرد</button></div>
+      <div style="margin-top:16px"><button class="btn" id="save-battle">${editing ? "به‌روزرسانی نبرد" : "ذخیره نبرد"}</button></div>
       <div id="save-msg"></div>
     </div>
   `;
@@ -122,6 +124,8 @@ function renderManualForm() {
   };
   document.getElementById("f-troops").addEventListener("input", updateEstimate);
   document.getElementById("f-type").addEventListener("change", updateEstimate);
+  if (editing) document.getElementById("f-type").value = editing.troopType || "Cataphract";
+  updateEstimate();
 
   // پیش‌پرکردن از OCR در صورت وجود
   if (Object.keys(ocrAssigned).length) {
@@ -135,28 +139,46 @@ function renderManualForm() {
     ocrAssigned = {};
   }
 
-  document.getElementById("save-battle").onclick = () => {
-    const b = {
-      account: document.getElementById("f-account").value.trim() || "بدون‌نام",
-      date: document.getElementById("f-date").value.trim(),
-      level: +document.getElementById("f-level").value || 15,
-      targetPower: +document.getElementById("f-power").value || null,
-      troops: +document.getElementById("f-troops").value || 0,
-      troopType: document.getElementById("f-type").value,
-      deaths: +document.getElementById("f-deaths").value || 0,
-      wounded: +document.getElementById("f-wounded").value || 0,
-      injured: document.getElementById("f-injured").value ? +document.getElementById("f-injured").value : null,
-      survivors: document.getElementById("f-survivors").value ? +document.getElementById("f-survivors").value : null,
-      note: document.getElementById("f-note").value.trim(),
-    };
-    if (!b.troops || !b.wounded) {
-      document.getElementById("save-msg").innerHTML = `<div class="banner banner-error">نیروی اعزامی و تعداد مجروح باید پر بشه.</div>`;
+  document.getElementById("save-battle").onclick = () => doSaveBattle(editing);
+}
+
+function cancelEdit() { editingBattleId = null; renderAdd(); }
+
+function doSaveBattle(editing, force = false) {
+  const b = {
+    account: document.getElementById("f-account").value.trim() || "Lilmamazi",
+    date: document.getElementById("f-date").value.trim(),
+    level: +document.getElementById("f-level").value || 15,
+    targetPower: +document.getElementById("f-power").value || null,
+    troops: +document.getElementById("f-troops").value || 0,
+    troopType: document.getElementById("f-type").value,
+    deaths: +document.getElementById("f-deaths").value || 0,
+    wounded: +document.getElementById("f-wounded").value || 0,
+    injured: document.getElementById("f-injured").value ? +document.getElementById("f-injured").value : null,
+    survivors: document.getElementById("f-survivors").value ? +document.getElementById("f-survivors").value : null,
+    note: document.getElementById("f-note").value.trim(),
+  };
+  const msgEl = document.getElementById("save-msg");
+  if (!b.troops || !b.wounded) {
+    msgEl.innerHTML = `<div class="banner banner-error">نیروی اعزامی و تعداد مجروح باید پر بشه.</div>`;
+    return;
+  }
+  if (!force) {
+    const dup = findDuplicate(b, editing ? editing.id : null);
+    if (dup) {
+      msgEl.innerHTML = `
+        <div class="banner banner-warn">
+          یه نبرد کاملاً مشابه (همون سطح، نیرو، قدرت هدف و مجروح) قبلاً ثبت شده (#${dup.id}). این احتمالاً یه ثبت تکراریه.
+          <div style="margin-top:8px"><button class="btn btn-secondary" onclick="doSaveBattle(${editing ? 'true':'false'}, true)">با این حال ذخیره کن</button></div>
+        </div>`;
       return;
     }
-    addBattle(b);
-    document.getElementById("save-msg").innerHTML = `<div class="banner banner-success">نبرد با موفقیت ذخیره شد ✓</div>`;
-    setTimeout(() => { document.querySelector('[data-tab=dashboard]').click(); }, 900);
-  };
+  }
+  if (editing) updateBattle(editing.id, b);
+  else addBattle(b);
+  msgEl.innerHTML = `<div class="banner banner-success">${editing ? "به‌روزرسانی شد" : "ذخیره شد"} ✓</div>`;
+  editingBattleId = null;
+  setTimeout(() => { document.querySelector('[data-tab=dashboard]').click(); }, 900);
 }
 
 function renderVisionTab() {
@@ -368,8 +390,11 @@ function renderSettings() {
       <h2>همه نبردها (${battles.length})</h2>
       ${battles.map(b => `
         <div class="battle-item">
-          <span>${b.account} · Lv${b.level} · ${b.troops} نفر · مجروح ${b.wounded}</span>
-          <button class="del" onclick="removeBattle(${b.id})">✕</button>
+          <span>${b.account} · Lv${b.level} · ${b.troops.toLocaleString('en-US')} نفر · مجروح ${b.wounded}</span>
+          <span>
+            <button class="del" style="color:var(--accent)" onclick="editBattle(${b.id})">✎</button>
+            <button class="del" onclick="removeBattle(${b.id})">✕</button>
+          </span>
         </div>
       `).join("") || `<div class="empty-state">هنوز نبردی ثبت نشده</div>`}
     </div>
@@ -381,6 +406,12 @@ function renderSettings() {
   `;
   document.getElementById("btn-export").onclick = exportJSON;
   document.getElementById("btn-import").onchange = (e) => { if (e.target.files[0]) importJSON(e.target.files[0]); };
+}
+
+function editBattle(id) {
+  editingBattleId = id;
+  addSubTab = "manual";
+  document.querySelector('[data-tab=add]').click();
 }
 
 function removeBattle(id) {

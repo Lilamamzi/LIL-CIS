@@ -27,6 +27,31 @@ function finalizeBattle(b) {
   return b;
 }
 
+function findDuplicate(b, excludeId = null) {
+  const list = loadBattles();
+  return list.find(x =>
+    x.id !== excludeId &&
+    x.level === b.level &&
+    x.troops === b.troops &&
+    x.targetPower === b.targetPower &&
+    x.wounded === b.wounded
+  ) || null;
+}
+
+function updateBattle(id, updates) {
+  const list = loadBattles();
+  const idx = list.findIndex(b => b.id === id);
+  if (idx === -1) return null;
+  const merged = finalizeBattle({ ...list[idx], ...updates, id });
+  list[idx] = merged;
+  saveBattles(list);
+  return merged;
+}
+
+function getBattle(id) {
+  return loadBattles().find(b => b.id === id) || null;
+}
+
 function addBattle(b) {
   const list = loadBattles();
   const id = list.length ? Math.max(...list.map(x => x.id)) + 1 : 1;
@@ -61,6 +86,35 @@ function pearson(xs, ys) {
 }
 
 // ---------- Viking Engine ----------
+// خوشه‌بندی پویا: به‌جای بازه‌های ثابت (که فقط برای یه سطح خاص جواب می‌داد)،
+// نبردها رو بر اساس نزدیکی نیروی اعزامی خودشون به‌صورت خودکار گروه‌بندی می‌کنیم.
+// هر نبرد جدید در سطحی که تا حالا نبوده، خودش یه خوشه جدید می‌سازه.
+function dynamicBuckets(battles, tolerance = 0.15) {
+  const sorted = [...battles].sort((a, b) => a.troops - b.troops);
+  const clusters = [];
+  for (const b of sorted) {
+    const last = clusters[clusters.length - 1];
+    if (last && b.troops <= last.max * (1 + tolerance)) {
+      last.items.push(b);
+      last.max = Math.max(last.max, b.troops);
+      last.min = Math.min(last.min, b.troops);
+    } else {
+      clusters.push({ min: b.troops, max: b.troops, items: [b] });
+    }
+  }
+  return clusters.map(c => {
+    const w = c.items.map(b => b.wounded);
+    const r = c.items.map(b => b.woundRate);
+    const label = c.min === c.max ? `${c.min.toLocaleString('en-US')}` : `${c.min.toLocaleString('en-US')}–${c.max.toLocaleString('en-US')}`;
+    return {
+      label, min: c.min, max: c.max, n: c.items.length,
+      meanWounded: +mean(w).toFixed(1), stdWounded: +std(w).toFixed(1),
+      meanRate: +mean(r).toFixed(2), stdRate: +std(r).toFixed(2),
+      lowConfidence: c.items.length < 3,
+    };
+  });
+}
+
 function vikingAnalysis(level) {
   const battles = loadBattles().filter(b => b.level === level && b.troopType === "Cataphract");
   if (battles.length < 2) return { battles, n: battles.length, insufficient: true };
@@ -72,24 +126,8 @@ function vikingAnalysis(level) {
   const corrTroopsWounded = pearson(troops, wounded);
   const corrTroopsRate = pearson(troops, rate);
 
-  // سطل‌بندی نیرو
-  const buckets = [
-    { label: "۱۷۰۰–۲۳۰۰", min: 1700, max: 2300 },
-    { label: "۳۵۰۰–۴۴۰۰", min: 3500, max: 4400 },
-    { label: "۵۹۰۰–۸۲۰۰", min: 5900, max: 8200 },
-  ];
-  const bucketStats = buckets.map(bk => {
-    const items = battles.filter(b => b.troops >= bk.min && b.troops <= bk.max);
-    if (!items.length) return { ...bk, n: 0 };
-    const w = items.map(b => b.wounded);
-    const r = items.map(b => b.woundRate);
-    return {
-      ...bk, n: items.length,
-      meanWounded: +mean(w).toFixed(1), stdWounded: +std(w).toFixed(1),
-      meanRate: +mean(r).toFixed(2), stdRate: +std(r).toFixed(2),
-      lowConfidence: items.length < 3,
-    };
-  });
+  // سطل‌بندی پویا (بر اساس داده واقعی همون سطح، نه بازه ثابت)
+  const bucketStats = dynamicBuckets(battles);
 
   return {
     battles, n: battles.length, insufficient: false,
