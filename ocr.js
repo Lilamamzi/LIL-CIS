@@ -14,7 +14,6 @@ const OCR_FIELDS = [
   { key: "troops", label: "نیروی اعزامی (من)" },
   { key: "deaths", label: "تلفات (من)" },
   { key: "wounded", label: "مجروح (من)" },
-  { key: "injured", label: "مصدوم (من)" },
 ];
 
 function faDigitsToEn(str) {

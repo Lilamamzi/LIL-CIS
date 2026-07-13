@@ -101,10 +101,6 @@ function renderManualForm() {
         <div><label>تلفات</label><input type="number" id="f-deaths" placeholder="0" value="${editing ? editing.deaths : 1}"></div>
         <div><label>مجروح</label><input type="number" id="f-wounded" placeholder="مثلا 50" value="${editing ? editing.wounded : ''}"></div>
       </div>
-      <div class="row2">
-        <div><label>مصدوم (اختیاری)</label><input type="number" id="f-injured" placeholder="—" value="${editing && editing.injured ? editing.injured : ''}"></div>
-        <div><label>بازمانده (اختیاری)</label><input type="number" id="f-survivors" placeholder="—" value="${editing && editing.survivors ? editing.survivors : ''}"></div>
-      </div>
 
       <label>یادداشت (اختیاری)</label>
       <input type="text" id="f-note" placeholder="مثلا probe با Zulu" value="${editing ? editing.note || '' : ''}">
@@ -134,7 +130,6 @@ function renderManualForm() {
     if (ocrAssigned.troops) document.getElementById("f-troops").value = ocrAssigned.troops;
     if (ocrAssigned.deaths !== undefined) document.getElementById("f-deaths").value = ocrAssigned.deaths;
     if (ocrAssigned.wounded) document.getElementById("f-wounded").value = ocrAssigned.wounded;
-    if (ocrAssigned.injured) document.getElementById("f-injured").value = ocrAssigned.injured;
     updateEstimate();
     ocrAssigned = {};
   }
@@ -154,8 +149,6 @@ function doSaveBattle(editing, force = false) {
     troopType: document.getElementById("f-type").value,
     deaths: +document.getElementById("f-deaths").value || 0,
     wounded: +document.getElementById("f-wounded").value || 0,
-    injured: document.getElementById("f-injured").value ? +document.getElementById("f-injured").value : null,
-    survivors: document.getElementById("f-survivors").value ? +document.getElementById("f-survivors").value : null,
     note: document.getElementById("f-note").value.trim(),
   };
   const msgEl = document.getElementById("save-msg");
@@ -302,11 +295,15 @@ function renderAnalysis() {
 
     ${!a.insufficient ? `
     <div class="card">
-      <h2>پیشنهاد هوشمند</h2>
+      <h2>پیشنهاد هوشمند (سطح ${analysisLevel})</h2>
       ${renderRecCard("کمترین مجروح خام", recommend(analysisLevel,"wounded"))}
       ${renderRecCard("کمترین نرخ مجروحیت", recommend(analysisLevel,"rate"))}
     </div>
+    ` : ""}
 
+    ${renderPredictorCard()}
+
+    ${!a.insufficient ? `
     <div class="card">
       <h2>تخمین ترکیب پنهان سپاه دشمن</h2>
       <p class="muted">اطمینان: <b>${comp.confidence}</b> (بر اساس ${comp.n || 0} نبرد). این فقط یه تخمین احتمالاتیه، نه واقعیت قطعی.</p>
@@ -358,11 +355,57 @@ function renderAnalysis() {
   `;
 
   document.getElementById("level-select").onchange = (e) => setAnalysisLevel(+e.target.value);
+  attachPredictorEvents();
 
   if (!a.insufficient) {
     drawConfidenceRing(document.getElementById("conf-ring"), Math.min(a.n / 20, 1), a.n + "");
     drawScatter(document.getElementById("scatter"), a.battles.map(b => ({ x: b.troops, y: b.woundRate })), { xLabel: "نیروی اعزامی" });
   }
+}
+
+function renderPredictorCard() {
+  const model = fitWoundRateModel();
+  if (!model) {
+    return `<div class="card"><h2>پیش‌بینی هوشمند بین‌سطحی</h2><p class="muted">حداقل ۵ نبرد (با قدرت هدف ثبت‌شده) لازمه تا این مدل فعال بشه.</p></div>`;
+  }
+  return `
+    <div class="card">
+      <h2>پیش‌بینی هوشمند بین‌سطحی</h2>
+      <p class="muted">
+        این مدل رابطه‌ی «نسبت قدرت هدف به نیروی اعزامی» با نرخ مجروحیت رو از رو <b>همه‌ی سطوح با هم</b> یاد می‌گیره؛
+        یعنی حتی برای وایکینگی که هنوز نزدیش نرفتید (فقط قدرتش رو دیدید)، می‌تونه نیروی لازم رو تخمین بزنه.
+      </p>
+      <div class="stat-row"><span class="stat-label">دقت مدل (R²)</span><span class="stat-value">${(model.r2*100).toFixed(0)}٪</span></div>
+      <div class="stat-row"><span class="stat-label">تعداد نبرد پایه مدل</span><span class="stat-value">${model.n}</span></div>
+
+      <label>قدرت هدف (هر سطحی)</label>
+      <input type="number" id="pred-power" placeholder="مثلا 309000">
+      <label>نرخ مجروحیت قابل‌قبول (٪)</label>
+      <input type="number" id="pred-rate" placeholder="مثلا 1.5" step="0.1">
+      <div style="margin-top:12px"><button class="btn" id="pred-btn">محاسبه نیروی لازم</button></div>
+      <div id="pred-result" style="margin-top:10px"></div>
+    </div>
+  `;
+}
+
+function attachPredictorEvents() {
+  const btn = document.getElementById("pred-btn");
+  if (!btn) return;
+  btn.onclick = () => {
+    const power = +document.getElementById("pred-power").value;
+    const rate = +document.getElementById("pred-rate").value;
+    const resEl = document.getElementById("pred-result");
+    if (!power || !rate) {
+      resEl.innerHTML = `<div class="banner banner-error">قدرت هدف و نرخ مجروحیت رو پر کنید.</div>`;
+      return;
+    }
+    const troops = requiredTroopsForRate(power, rate);
+    if (troops === null || troops <= 0) {
+      resEl.innerHTML = `<div class="banner banner-error">با این نرخ، مدل جواب معقولی نداره — نرخ بالاتری امتحان کنید.</div>`;
+      return;
+    }
+    resEl.innerHTML = `<div class="banner banner-success">برای این هدف، حدود <b class="mono">${troops.toLocaleString('en-US')}</b> نفر Cataphract نیاز دارید تا نرخ مجروحیت حدود ${rate}٪ بمونه.</div>`;
+  };
 }
 
 function renderRecCard(title, rec) {

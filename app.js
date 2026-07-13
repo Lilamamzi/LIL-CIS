@@ -85,7 +85,49 @@ function pearson(xs, ys) {
   return num / Math.sqrt(dx2 * dy2);
 }
 
-// ---------- Viking Engine ----------
+// ---------- مدل پیش‌بینی نسبت قدرت/نیرو (تعمیم بین سطوح مختلف) ----------
+// فرضیه: نرخ مجروحیت با نسبت (قدرت هدف / نیروی اعزامی) رابطه خطی داره،
+// و چون این نسبت خودش قدرت رو نرمالایز می‌کنه، بین سطوح مختلف هم قابل تعمیمه
+// (نه فقط برای یه سطح خاص مثل بازه‌های ثابت قدیمی).
+function linreg(xs, ys) {
+  const n = xs.length;
+  const mx = mean(xs), my = mean(ys);
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) { num += (xs[i] - mx) * (ys[i] - my); den += (xs[i] - mx) ** 2; }
+  const b = den ? num / den : 0;
+  const a = my - b * mx;
+  const predicted = xs.map(x => a + b * x);
+  const ssRes = ys.reduce((s, y, i) => s + (y - predicted[i]) ** 2, 0);
+  const ssTot = ys.reduce((s, y) => s + (y - my) ** 2, 0);
+  const r2 = ssTot ? 1 - ssRes / ssTot : 0;
+  return { a, b, r2, n };
+}
+
+function fitWoundRateModel() {
+  const battles = loadBattles().filter(b => b.troopType === "Cataphract" && b.targetPower && b.troops);
+  if (battles.length < 5) return null;
+  const ratio = battles.map(b => b.targetPower / b.troops);
+  const rate = battles.map(b => b.woundRate);
+  return linreg(ratio, rate);
+}
+
+// پیش‌بینی نرخ مجروحیت برای یک ترکیب قدرت هدف/نیرو دلخواه
+function predictWoundRate(targetPower, troops) {
+  const model = fitWoundRateModel();
+  if (!model) return null;
+  const ratio = targetPower / troops;
+  return Math.max(0, model.a + model.b * ratio);
+}
+
+// معکوس مدل: برای یک هدف با قدرت مشخص، چند نیرو لازمه تا نرخ مجروحیت زیر مقدار دلخواه بمونه؟
+function requiredTroopsForRate(targetPower, desiredRate) {
+  const model = fitWoundRateModel();
+  if (!model) return null;
+  if (desiredRate <= model.a) return null; // این نرخ با این مدل خطی قابل دستیابی نیست
+  return Math.round((model.b * targetPower) / (desiredRate - model.a));
+}
+
+
 // خوشه‌بندی پویا: به‌جای بازه‌های ثابت (که فقط برای یه سطح خاص جواب می‌داد)،
 // نبردها رو بر اساس نزدیکی نیروی اعزامی خودشون به‌صورت خودکار گروه‌بندی می‌کنیم.
 // هر نبرد جدید در سطحی که تا حالا نبوده، خودش یه خوشه جدید می‌سازه.
