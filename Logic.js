@@ -43,3 +43,21 @@ export class BattleAnalyzer {
         return "پیشنهاد: با استفاده از کماندارها از فاصله دور حمله کنید.";
     }
 }
+// این قسمت رو وقتی دکمه تحلیل رو زدی صدا کن
+function showChart(percent) {
+    const ctx = document.getElementById('myChart').getContext('2d');
+    
+    new Chart(ctx, {
+        type: 'doughnut', // مدل دایره‌ای
+        data: {
+            labels: ['شانس پیروزی'],
+            datasets: [{
+                data: [percent, 100 - percent],
+                backgroundColor: ['#007bff', '#e0e0e0'] // رنگ آبی برای پیروزی، خاکستری برای بقیه
+            }]
+        },
+        options: {
+            plugins: { legend: { display: false } } // متن‌های اضافه رو حذف می‌کنه
+        }
+    });
+}
